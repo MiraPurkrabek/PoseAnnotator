@@ -23,7 +23,16 @@ class BboxAnnotator(object):
     """
 
     def __init__(
-        self, annotations, img_id, img_path, window_name="Image", fps=20, is_start=True
+        self,
+        annotations,
+        img_id,
+        img_path,
+        window_name="Image",
+        fps=20,
+        is_start=True,
+        click_radius_ratio=0.05,
+        history_size=100,
+        mark_checked_interval_seconds=3.0,
     ) -> None:
         self.started_at = time.time()
 
@@ -49,10 +58,12 @@ class BboxAnnotator(object):
         self.window_name = window_name
         self.pressed_at = 0
         self.fps = fps
+        self.history_size = history_size
+        self.mark_checked_interval_seconds = mark_checked_interval_seconds
 
-        self.distance_threshold = (self.img.shape[0] + self.img.shape[1]) / 2 * 0.05
+        self.distance_threshold = (self.img.shape[0] + self.img.shape[1]) / 2 * click_radius_ratio
 
-        self.memory = deque(maxlen=100)
+        self.memory = deque(maxlen=self.history_size)
         self.memory.append(deepcopy((self.starts, self.stops)))
 
         self.show()
@@ -138,9 +149,7 @@ class BboxAnnotator(object):
         text = "{}".format(self.img_id)
 
         text_color = (0, 0, 255) if self.is_start else (0, 255, 0)
-        img = cv2.putText(
-            img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 1, cv2.LINE_AA
-        )
+        img = cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 1, cv2.LINE_AA)
 
         cv2.imshow(self.window_name, img)
 
@@ -148,7 +157,7 @@ class BboxAnnotator(object):
         if len(self.memory) > 0:
             if all:
                 self.starts, self.stops = self.memory[0]
-                self.memory = deque(maxlen=100)
+                self.memory = deque(maxlen=self.history_size)
                 self.memory.append(deepcopy((self.starts, self.stops)))
             else:
                 self.starts, self.stops = self.memory.pop()
@@ -180,22 +189,19 @@ class BboxAnnotator(object):
                 self.annotations.append(
                     {
                         "image_id": self.img_id,
-                        "bbox": np.array(
-                            [start[0], start[1], stop[0] - start[0], stop[1] - start[1]]
-                        ),
+                        "bbox": np.array([start[0], start[1], stop[0] - start[0], stop[1] - start[1]]),
                         "keypoints": np.zeros((17, 3)),
                         "category_id": 1,
                         "id": np.random.randint(low=0, high=1e6),
                     }
                 )
-                if time.time() - self.started_at > 3:
-                    self.annotations[-1]["checked"] = datetime.datetime.now().strftime(
-                        "%Y-%m-%d_%H:%M:%S"
-                    )
+                if (
+                    self.mark_checked_interval_seconds > 0
+                    and time.time() - self.started_at > self.mark_checked_interval_seconds
+                ):
+                    self.annotations[-1]["checked"] = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
             else:
-                print(
-                    f"Invalid bbox: {start}, {stop}, bbox_width: {bbox_width}, bbox_height: {bbox_height}"
-                )
+                print(f"Invalid bbox: {start}, {stop}, bbox_width: {bbox_width}, bbox_height: {bbox_height}")
                 print(f"Img_id: {self.img_id}")
 
         if json_compatible:

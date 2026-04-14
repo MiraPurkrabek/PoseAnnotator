@@ -1,5 +1,9 @@
 import datetime
 import json
+import os
+
+POSE_ANNOTATIONS_FILENAME = "person_keypoints_val2017.json"
+
 
 def load_annotations(annotations_file):
     """
@@ -52,6 +56,29 @@ def save_annotations(annotations_file, annotations, update_date=False, save=True
         json.dump(annotations, f, indent=2)
 
 
+def save_annotations_by_image(annotations_file, annotations, ann_dict, update_date=False, save=True):
+    """
+    Save annotations stored in a per-image dictionary to a COCO annotations file.
+
+    Args:
+        annotations_file (str): Destination JSON file.
+        annotations (dict): COCO annotations payload.
+        ann_dict (dict): Mapping from image IDs to lists of annotations.
+        update_date (bool, optional): Whether to update ``info.date_created``.
+        save (bool, optional): Whether to write the file.
+    """
+    annotations["annotations"] = []
+    for ann_list in ann_dict.values():
+        annotations["annotations"].extend(ann_list)
+
+    save_annotations(
+        annotations_file,
+        annotations,
+        update_date=update_date,
+        save=save,
+    )
+
+
 def increment_idx(idx, len_annotations, increment):
     """
     Increments the given index by the specified increment, taking into account the length of the annotations.
@@ -72,6 +99,81 @@ def increment_idx(idx, len_annotations, increment):
     return idx
 
 
+def has_output_suffix(filepath, output_suffix):
+    """
+    Check whether the given file stem already ends with the configured suffix.
+    """
+    stem, _ = os.path.splitext(filepath)
+    return bool(output_suffix) and stem.endswith(output_suffix)
+
+
+def build_pose_output_path(annotations_file, output_suffix):
+    """
+    Build the output path for pose annotations without double-appending the suffix.
+    """
+    stem, ext = os.path.splitext(annotations_file)
+    if has_output_suffix(annotations_file, output_suffix):
+        return annotations_file
+    return "{:s}{:s}{:s}".format(stem, output_suffix, ext)
+
+
+def _build_pose_annotations_path(dataset_root):
+    return os.path.join(dataset_root, "annotations", POSE_ANNOTATIONS_FILENAME)
+
+
+def _choose_existing_pose_annotations_path(annotations_file, output_suffix):
+    output_file = build_pose_output_path(annotations_file, output_suffix)
+    legacy_output_file = build_pose_output_path(annotations_file, "_kpts")
+    for candidate in [output_file, legacy_output_file, annotations_file]:
+        if os.path.exists(candidate):
+            return candidate
+    return annotations_file
+
+
+def resolve_bbox_dataset_path(coco_folder, sequence_root):
+    """
+    Resolve a bbox dataset path from either an explicit path or a shorthand sequence name.
+    """
+    if os.path.exists(coco_folder):
+        return os.path.abspath(coco_folder)
+    return os.path.abspath(os.path.join(sequence_root, coco_folder))
+
+
+def resolve_pose_annotations_path(coco_filepath, sequence_root, output_suffix):
+    """
+    Resolve a pose annotations path from an explicit path or a shorthand sequence name.
+    """
+    if os.path.exists(coco_filepath):
+        resolved_path = os.path.abspath(coco_filepath)
+        if os.path.isfile(resolved_path):
+            return resolved_path
+        if os.path.isdir(resolved_path):
+            annotations_file = _build_pose_annotations_path(resolved_path)
+            return _choose_existing_pose_annotations_path(annotations_file, output_suffix)
+
+    dataset_root = os.path.join(sequence_root, coco_filepath)
+    annotations_file = _build_pose_annotations_path(dataset_root)
+    return _choose_existing_pose_annotations_path(annotations_file, output_suffix)
+
+
+def infer_image_dir(annotations_file, output_suffix):
+    """
+    Infer the image directory from a pose annotations filename.
+    """
+    ann_filename = os.path.splitext(os.path.basename(annotations_file))[0]
+    for suffix in [output_suffix, "_kpts"]:
+        if suffix and ann_filename.endswith(suffix):
+            ann_filename = ann_filename[: -len(suffix)]
+
+    ann_type = ann_filename.split("_")[-1]
+    if ann_type not in ["train2017", "val2017"]:
+        print("Could not determine image directory from annotations file name. Using 'val2017' as default.")
+        ann_type = "val2017"
+
+    coco_ann_root = os.path.dirname(annotations_file)
+    return os.path.join(os.path.dirname(coco_ann_root), ann_type)
+
+
 def authenticate_drive():
     """
     Authenticates the user with Google Drive using OAuth2.
@@ -81,6 +183,7 @@ def authenticate_drive():
         GoogleAuth: Authenticated GoogleAuth object.
     """
     from pydrive.auth import GoogleAuth
+
     gauth = GoogleAuth()
     gauth.LoadCredentialsFile("credentials.json")
     if not gauth.credentials:
@@ -105,17 +208,17 @@ def upload_annotations(drive, annotations, file_name, folder_id):
         folder_id (str): Google Drive folder ID where the file will be uploaded.
     """
     query = f"'{folder_id}' in parents and title = '{file_name}' and trashed = false"
-    file_list = drive.ListFile({'q': query}).GetList()
+    file_list = drive.ListFile({"q": query}).GetList()
     if file_list:
         gfile = file_list[0]
         print(f"File '{file_name}' exists. It will be updated.")
     else:
         if folder_id is None:
-            gfile = drive.CreateFile({'title': file_name})
+            gfile = drive.CreateFile({"title": file_name})
         else:
-            gfile = drive.CreateFile({'title': file_name, 'parents': [{'id': folder_id}]})
+            gfile = drive.CreateFile({"title": file_name, "parents": [{"id": folder_id}]})
         print(f"File '{file_name}' does not exist. It will be created.")
-        
+
     annotations["info"]["date_created"] = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     gfile.SetContentString(json.dumps(annotations, indent=2))
     gfile.Upload()

@@ -1,39 +1,60 @@
 # PoseAnnotator
-PoseAnnotator is a simple Python tool with a GUI for annotating 2D human poses from images. It allows users to easily label key points on human figures for pose estimation tasks.
 
-![example](docs/images/correct.gif)
+PoseAnnotator is a local Python/OpenCV app for annotating person bounding boxes and 2D human poses in images. It is designed for COCO-style workflows and focuses on fast manual annotation with pose-aware visualization.
 
-### Why PoseAnnotator
+The repository serves two audiences:
+- annotators who need to run the app and produce consistent labels
+- developers who need to understand, extend, or maintain the codebase
 
-There are nice free annotation tools like [CVAT](https://www.cvat.ai) or [LabelStudio](https://labelstud.io) but they do not specialize for 2D Human Pose Annotation. It is possible to annotate images with keypoints or landmarks but there is no structure visualized for annotator to better understand the scene.
+## For Annotators
 
-We created this tiny tool to annotate our own 2D Human Pose Estimation dataset ([RePoGen](https://mirapurkrabek.github.io/RePoGen-paper/)). From our experience, having visualization of annotated Human Pose minimize common errors like switching left and right side, switching keypoints etc.
+Start here if you want to use the app for labeling.
 
+- [Annotator docs index](docs/README.md#annotator-docs)
+- [Getting started](docs/annotators/getting-started.md)
+- [Workflow](docs/annotators/workflow.md)
+- [Keyboard shortcuts](docs/annotators/shortcuts.md)
+- [Pose and visibility rules](docs/annotators/pose-and-visibility.md)
 
-We publish this project for other researchers and people focusing on 2D Human Pose Estimation.
-It runs localy on any Linux-based computer and allows you to annotate both bounding boxes and keypoints in any images.
-If you find this tool useful, let us or other people who might be interested, know.
+Minimal commands:
 
-## Installation
+```bash
+python annotate_bboxes.py <dataset-folder-or-sequence>
+python annotate_pose.py <annotation-file-or-sequence>
+```
 
-The tool does not need any installation apart from common Python libraries defined in [requirements.txt](requirements.txt). You can use either pip or Conda and provided [environment file](environment.yml).
+## For Developers
 
-Unreasonably detailed instruction are at [install.md](docs/install.md)
+Start here if you want to install the project locally, understand the structure, or contribute changes.
 
-If you would like to contribute to the project, please use the pre-commit which automatically format the code. To install, just run 
-`pre-commit install` and the code will be automatically formatted after each commit.
+- [Developer docs index](docs/README.md#developer-docs)
+- [Project overview](docs/dev/overview.md)
+- [Setup](docs/dev/setup.md)
+- [Codebase guide](docs/dev/codebase.md)
+- [Contributing](docs/dev/contributing.md)
+- [Configuration reference](docs/dev/config.md)
 
-## Usage
+Minimal setup:
 
-The script might need minor adaptations to use for your specific use-case. 
+```bash
+pip install -r requirements.txt
+pre-commit install
+```
 
-For details like keyboard shortcuts, see [annotation how to](docs/annotation.md)
+## Quick Notes
+
+- The app is configured through [annotator_config.ini](annotator_config.ini).
+- You can pass full paths or shorthand sequence names resolved under `sequence_root`.
+- Pose annotations are written to a suffixed file such as `*_manual.json` by default.
+- Google Drive upload is supported as an optional feature.
+
+## Contributing
+
+Please read [docs/dev/contributing.md](docs/dev/contributing.md) before making code changes. The short version is: keep the current repo structure, use `pre-commit`, and update docs when behavior changes.
 
 ## Citation
 
-If you find this project useful, share it with others.
-
-If you use the tool for your research, please consider citing us:
+If you use the tool for research, please consider citing:
 
 ```bibtex
 @misc{PoseAnnotator2024,

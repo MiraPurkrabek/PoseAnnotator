@@ -88,11 +88,7 @@ def merge_annotations(file1, file2, output_file):
         merged_anns.append(merged_ann)
     stds_all = np.array(stds_all)
 
-    print(
-        "Keypoints visibility match: {:.2f} %".format(
-            visibility_match / (len(merged_anns) * 17) * 100
-        )
-    )
+    print("Keypoints visibility match: {:.2f} %".format(visibility_match / (len(merged_anns) * 17) * 100))
 
     sigmas = stds_all.std(axis=0)
     coco_sigmas = np.array(

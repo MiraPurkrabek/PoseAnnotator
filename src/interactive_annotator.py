@@ -20,6 +20,11 @@ class InteractiveAnnotator(object):
         is_start=True,
         two_scales=False,
         inf_size=None,
+        default_bbox_padding=0.0,
+        click_radius_ratio=0.05,
+        history_size=100,
+        visibility_levels=3,
+        mark_checked_interval_seconds=3.0,
         normalize_shape=True,
         pose_format="coco",
     ) -> None:
@@ -39,40 +44,7 @@ class InteractiveAnnotator(object):
         - pose_format: The format of the pose annotation.
         """
         self.started_at = time.time()
-
-        self.img = cv2.imread(img_path)
-
-        if annotation is None:
-            self.annotation = {
-                "keypoints": np.zeros((17, 3)),
-                "bbox": [0, 0, self.img.shape[1], self.img.shape[0]],
-                "image_id": 0,
-                "category_id": 1,
-                "id": 0,
-            }
-            self.bbox_pad = 0.0 + 7 * 0.05
-        else:
-            self.annotation = deepcopy(annotation)
-
-            if "keypoints" not in self.annotation.keys():
-                self.annotation["keypoints"] = np.zeros((17, 3))
-
-            if "area" not in self.annotation.keys():
-                self.annotation["area"] = self.annotation["bbox"][2] * self.annotation["bbox"][3]
-
-            self.annotation["keypoints"] = np.array(self.annotation["keypoints"]).reshape(-1, 3)
-            self.bbox_pad = 0.0 + 7 * 0.05
-
-        self.inf_size = inf_size
-        self.preset_inf_size = inf_size
-        self.is_start = is_start
-        self.two_scales = two_scales
         self.pose_format = pose_format.lower()
-        self.current_keypoint = None
-        self.dragging = False
-        self.window_name = window_name
-        self.pressed_at = 0
-        self.fps = fps
 
         self.implemented_formats = ["coco", "coco_with_thumbs"]
         assert (
@@ -81,22 +53,51 @@ class InteractiveAnnotator(object):
             self.pose_format, self.implemented_formats
         )
 
+        self.img = cv2.imread(img_path)
+        self.default_visibility_value = 2
+        self.visibility_levels = visibility_levels
+        self.history_size = history_size
+        self.mark_checked_interval_seconds = mark_checked_interval_seconds
+
+        if annotation is None:
+            self.annotation = {
+                "keypoints": np.zeros((self.num_keypoints, 3)),
+                "bbox": [0, 0, self.img.shape[1], self.img.shape[0]],
+                "image_id": 0,
+                "category_id": 1,
+                "id": 0,
+            }
+        else:
+            self.annotation = deepcopy(annotation)
+
+            if "keypoints" not in self.annotation.keys():
+                self.annotation["keypoints"] = np.zeros((self.num_keypoints, 3))
+
+            if "area" not in self.annotation.keys():
+                self.annotation["area"] = self.annotation["bbox"][2] * self.annotation["bbox"][3]
+
+            self.annotation["keypoints"] = np.array(self.annotation["keypoints"]).reshape(-1, 3)
+
+        self._ensure_keypoint_layout()
+        self._normalize_visibility()
+
+        self.bbox_pad = default_bbox_padding
+        self.inf_size = inf_size
+        self.preset_inf_size = inf_size
+        self.is_start = is_start
+        self.two_scales = two_scales
+        self.current_keypoint = None
+        self.dragging = False
+        self.window_name = window_name
+        self.pressed_at = 0
+        self.fps = fps
         self.normalize_shape = normalize_shape
         self.x_transform = lambda x: x
         self.y_transform = lambda x: x
 
-        # If WITH HAND, the annotation should have 21 keypoints
-        if self.pose_format == "coco_with_thumbs" and self.annotation["keypoints"].shape[0] != 21:
-            missing_kpts = 21 - self.annotation["keypoints"].shape[0]
-            self.annotation["keypoints"] = np.vstack(
-                (self.annotation["keypoints"], np.zeros((missing_kpts, 3)))
-            )
+        self.distance_threshold = (self.annotation["bbox"][2] + self.annotation["bbox"][3]) / 2 * click_radius_ratio
 
-        self.distance_threshold = (
-            (self.annotation["bbox"][2] + self.annotation["bbox"][3]) / 2 * 0.05
-        )
-
-        self.memory = deque(maxlen=100)
+        self.memory = deque(maxlen=self.history_size)
         self.memory.append(deepcopy(self.annotation))
 
         self.with_example = with_example
@@ -104,8 +105,42 @@ class InteractiveAnnotator(object):
             self.example_img = cv2.imread("example_images/{:s}.png".format(self.pose_format))
         self.show()
 
+    @property
+    def num_keypoints(self):
+        if self.pose_format == "coco_with_thumbs":
+            return 21
+        return 17
+
+    def _ensure_keypoint_layout(self):
+        current_num_keypoints = self.annotation["keypoints"].shape[0]
+        if current_num_keypoints < self.num_keypoints:
+            missing_kpts = self.num_keypoints - current_num_keypoints
+            self.annotation["keypoints"] = np.vstack((self.annotation["keypoints"], np.zeros((missing_kpts, 3))))
+        elif current_num_keypoints > self.num_keypoints:
+            self.annotation["keypoints"] = self.annotation["keypoints"][: self.num_keypoints]
+
+    def _normalize_visibility(self):
+        keypoints = self.annotation["keypoints"]
+        positive_mask = keypoints[:, 2] > 0
+
+        if self.visibility_levels == 1:
+            keypoints[positive_mask, 2] = self.default_visibility_value
+        elif self.visibility_levels == 2:
+            guessed_mask = keypoints[:, 2] > 2
+            keypoints[guessed_mask, 2] = 1
+            occluded_mask = (keypoints[:, 2] > 0) & (keypoints[:, 2] < 2)
+            keypoints[occluded_mask, 2] = 1
+            visible_mask = keypoints[:, 2] == 2
+            keypoints[positive_mask & ~visible_mask, 2] = 1
+        else:
+            occluded_mask = (keypoints[:, 2] > 0) & (keypoints[:, 2] < 2)
+            keypoints[occluded_mask, 2] = 1
+            visible_mask = keypoints[:, 2] == 2
+            guessed_mask = keypoints[:, 2] > 2
+            keypoints[guessed_mask, 2] = 3
+            keypoints[positive_mask & ~visible_mask & ~guessed_mask, 2] = 1
+
     def mouse_callback(self, event, x, y, flags, params):
-        old_x, old_y = x, y
         x = self.x_transform(x)
         y = self.y_transform(y)
 
@@ -133,26 +168,32 @@ class InteractiveAnnotator(object):
                     self.annotation["keypoints"][self.current_keypoint, :2] = (
                         (x - self.x_divider) / self.x_offsets[1] * self.annotation["bbox"][2]
                         + self.annotation["bbox"][0],
-                        (y) / self.y_offsets[1] * self.annotation["bbox"][3]
-                        + self.annotation["bbox"][1],
+                        (y) / self.y_offsets[1] * self.annotation["bbox"][3] + self.annotation["bbox"][1],
                     )
 
                 if time.time() - self.pressed_at > 1 / self.fps:
                     self.pressed_at = time.time()
                     self.show()
 
+    def _cycle_visibility(self, current_visibility):
+        if self.visibility_levels == 1:
+            return self.default_visibility_value
+        if self.visibility_levels == 2:
+            return 1 if current_visibility == 2 else 2
+        if current_visibility == 1:
+            return 2
+        if current_visibility == 2:
+            return 3
+        return 1
+
     def key_pressed(self, k):
         # Change the visibility of the current keypoint
         if k == ord("v"):
-            if self.dragging and self.current_keypoint is not None:
-                v = self.annotation["keypoints"][self.current_keypoint, 2]
-                if v == 1:
-                    self.annotation["keypoints"][self.current_keypoint, 2] = 2
-                elif v == 2:
-                    self.annotation["keypoints"][self.current_keypoint, 2] = 3
-                elif v == 3:
-                    self.annotation["keypoints"][self.current_keypoint, 2] = 1
-                self.show()
+            if self.visibility_levels > 1 and self.dragging and self.current_keypoint is not None:
+                current_visibility = self.annotation["keypoints"][self.current_keypoint, 2]
+                if current_visibility > 0:
+                    self.annotation["keypoints"][self.current_keypoint, 2] = self._cycle_visibility(current_visibility)
+                    self.show()
 
         # Delete the current keypoint
         elif k == ord("d"):
@@ -180,10 +221,6 @@ class InteractiveAnnotator(object):
 
         # Add a new keypoint, if some is missing
         elif k == ord("a"):
-            self.add_keypoint()
-
-        # Clear
-        elif k == ord("c"):
             self.add_keypoint()
 
         # Zoom the image
@@ -214,11 +251,13 @@ class InteractiveAnnotator(object):
             self.show()
 
         elif k == ord("e"):
-            mask_vis_kpts = self.annotation["keypoints"][:, 2] == 2
-            mask_unvis_kpts = self.annotation["keypoints"][:, 2] == 1
-            self.annotation["keypoints"][mask_vis_kpts, 2] = 1
-            self.annotation["keypoints"][mask_unvis_kpts, 2] = 2
-            self.show()
+            if self.visibility_levels > 1:
+                mask_vis_kpts = self.annotation["keypoints"][:, 2] == 2
+                mask_unvis_kpts = self.annotation["keypoints"][:, 2] == 1
+                self.annotation["keypoints"][mask_vis_kpts, 2] = 1
+                self.annotation["keypoints"][mask_unvis_kpts, 2] = 2
+                self._normalize_visibility()
+                self.show()
 
         # if k > -1:
         #     print(k, self.annotation)
@@ -251,9 +290,7 @@ class InteractiveAnnotator(object):
             # Resite the example image
             if self.example_img.shape[0] != img.shape[0]:
                 ratio = img.shape[0] / self.example_img.shape[0]
-                self.example_img = cv2.resize(
-                    self.example_img, (int(ratio * self.example_img.shape[1]), img.shape[0])
-                )
+                self.example_img = cv2.resize(self.example_img, (int(ratio * self.example_img.shape[1]), img.shape[0]))
 
             img = np.hstack((img, self.example_img))
 
@@ -297,7 +334,7 @@ class InteractiveAnnotator(object):
         if len(self.memory) > 0:
             if all:
                 self.annotation = self.memory[0]
-                self.memory = deque(maxlen=100)
+                self.memory = deque(maxlen=self.history_size)
                 self.memory.append(deepcopy(self.annotation))
             else:
                 self.annotation = self.memory.pop()
@@ -308,12 +345,8 @@ class InteractiveAnnotator(object):
                 self.memory.append(deepcopy(self.annotation))
 
     def generate(self):
-        if self.pose_format == "coco":
-            self.annotation["keypoints"] = np.zeros((17, 3), dtype=float)
-        elif self.pose_format == "coco_with_thumbs":
-            self.annotation["keypoints"] = np.zeros((21, 3), dtype=float)
-
-        self.annotation["keypoints"][:, 2] = 2
+        self.annotation["keypoints"] = np.zeros((self.num_keypoints, 3), dtype=float)
+        self.annotation["keypoints"][:, 2] = self.default_visibility_value
         self.annotation["keypoints"][:17, :2] = [
             [0.50, 0.15],  # Nose
             [0.55, 0.10],  # Left eye
@@ -361,8 +394,12 @@ class InteractiveAnnotator(object):
         self.show()
 
     def get_annotation(self, json_compatible=False):
-        if time.time() - self.started_at > 3:
+        if (
+            self.mark_checked_interval_seconds > 0
+            and time.time() - self.started_at > self.mark_checked_interval_seconds
+        ):
             self.annotation["checked"] = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        self._normalize_visibility()
         if json_compatible:
             annotation = deepcopy(self.annotation)
             annotation["keypoints"] = annotation["keypoints"].flatten().tolist()
@@ -376,7 +413,7 @@ class InteractiveAnnotator(object):
             if (kpt[0] == 0 and kpt[1] == 0) and (kpt[2] == 0):
                 kpt[0] = np.random.rand() * self.annotation["bbox"][2] + self.annotation["bbox"][0]
                 kpt[1] = np.random.rand() * self.annotation["bbox"][3] + self.annotation["bbox"][1]
-                kpt[2] = 2
+                kpt[2] = self.default_visibility_value
                 self.show()
                 break
 

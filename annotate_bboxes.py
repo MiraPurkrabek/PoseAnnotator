@@ -6,20 +6,16 @@ import os
 import cv2
 import numpy as np
 
+from src.annotator_config import DEFAULT_CONFIG_PATH, load_annotator_config
 from src.bbox_annotator import BboxAnnotator
-from src.json_utils import increment_idx, load_annotations, save_annotations, upload_annotations, authenticate_drive
-
-
-def save_annotations(annotations_file, annotations, ann_dict, update_date=False):
-    annotations["annotations"] = []
-    for ann_list in ann_dict.values():
-        annotations["annotations"].extend(ann_list)
-
-    if update_date:
-        annotations["info"]["date_created"] = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-
-    with open(annotations_file, "w") as f:
-        json.dump(annotations, f, indent=2)
+from src.json_utils import (
+    authenticate_drive,
+    increment_idx,
+    load_annotations,
+    resolve_bbox_dataset_path,
+    save_annotations_by_image,
+    upload_annotations,
+)
 
 
 def parse_args():
@@ -27,36 +23,24 @@ def parse_args():
     parser.add_argument(
         "coco_folder",
         type=str,
-        help="Folder containing the dataset for annotation",
+        help="Folder containing the dataset for annotation or a shorthand sequence name",
     )
     parser.add_argument("--img-path", type=str, help="Path to the folder with images", default=None)
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to the annotator configuration file",
+    )
     parser.add_argument("--cloud-upload", default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument("--cloud-folder", type=str, help="Google Drive folder ID for uploading annotations", default='root')
+    parser.add_argument(
+        "--cloud-folder",
+        type=str,
+        help="Google Drive folder ID for uploading annotations",
+        default="root",
+    )
 
     args = parser.parse_args()
-
-    assert os.path.exists(args.coco_folder), "Given folder ({:s}) not found".format(
-        args.coco_folder
-    )
-    assert os.path.isdir(args.coco_folder), "Given folder ({:s}) is not a folder".format(
-        args.coco_folder
-    )
-
-    if args.img_path is None:
-        subdirs = [
-            d
-            for d in os.listdir(args.coco_folder)
-            if os.path.isdir(os.path.join(args.coco_folder, d))
-        ]
-        if "val2017" in subdirs:
-            args.img_path = os.path.join(args.coco_folder, "val2017")
-        elif "images" in subdirs:
-            args.img_path = os.path.join(args.coco_folder, "images")
-        else:
-            args.img_path = args.coco_folder
-
-    args = prepare_filestructure(args)
-
     return args
 
 
@@ -163,6 +147,23 @@ def create_ann_file(ann_filename, img_path):
 
 
 def main(args):
+    config = load_annotator_config(args.config)
+    args.coco_folder = resolve_bbox_dataset_path(args.coco_folder, config.sequence_root)
+
+    assert os.path.exists(args.coco_folder), "Given folder ({:s}) not found".format(args.coco_folder)
+    assert os.path.isdir(args.coco_folder), "Given folder ({:s}) is not a folder".format(args.coco_folder)
+
+    if args.img_path is None:
+        subdirs = [d for d in os.listdir(args.coco_folder) if os.path.isdir(os.path.join(args.coco_folder, d))]
+        if "val2017" in subdirs:
+            args.img_path = os.path.join(args.coco_folder, "val2017")
+        elif "images" in subdirs:
+            args.img_path = os.path.join(args.coco_folder, "images")
+        else:
+            args.img_path = args.coco_folder
+
+    args = prepare_filestructure(args)
+
     # Load the data
     coco_data, _, _, ann_dict = load_annotations(get_ann_filepath(args))
     img_list = [(img["file_name"], img["id"]) for img in coco_data["images"]]
@@ -171,6 +172,7 @@ def main(args):
 
     if args.cloud_upload:
         from pydrive.drive import GoogleDrive
+
         gauth = authenticate_drive()
         drive = GoogleDrive(gauth)
         folder_id = args.cloud_folder
@@ -182,6 +184,10 @@ def main(args):
         img_list[img_idx][1],
         os.path.join(args.img_path, img_list[img_idx][0]),
         is_start=img_idx == 0,
+        fps=config.drag_redraw_fps,
+        click_radius_ratio=config.click_radius_ratio,
+        history_size=config.history_size,
+        mark_checked_interval_seconds=config.mark_checked_interval_seconds,
     )
     cv2.setMouseCallback("Image", ia.mouse_callback)
 
@@ -197,8 +203,12 @@ def main(args):
                 img_list[img_idx][1],
                 os.path.join(args.img_path, img_list[img_idx][0]),
                 is_start=img_idx == 0,
+                fps=config.drag_redraw_fps,
+                click_radius_ratio=config.click_radius_ratio,
+                history_size=config.history_size,
+                mark_checked_interval_seconds=config.mark_checked_interval_seconds,
             )
-            save_annotations(save_path, coco_data, ann_dict, update_date=True)
+            save_annotations_by_image(save_path, coco_data, ann_dict, update_date=True)
 
             cv2.setMouseCallback("Image", ia.mouse_callback)
         elif k == ord("n") or k == 81:
@@ -210,34 +220,46 @@ def main(args):
                 img_list[img_idx][1],
                 os.path.join(args.img_path, img_list[img_idx][0]),
                 is_start=img_idx == 0,
+                fps=config.drag_redraw_fps,
+                click_radius_ratio=config.click_radius_ratio,
+                history_size=config.history_size,
+                mark_checked_interval_seconds=config.mark_checked_interval_seconds,
             )
-            save_annotations(save_path, coco_data, ann_dict, update_date=True)
+            save_annotations_by_image(save_path, coco_data, ann_dict, update_date=True)
 
             cv2.setMouseCallback("Image", ia.mouse_callback)
         elif k == ord(",") or k == 83:  # toggle current image
             ann_dict[img_list[img_idx][1]] = ia.get_annotation(json_compatible=True)
-            img_idx = increment_idx(img_idx, len(img_list), -10)
+            img_idx = increment_idx(img_idx, len(img_list), -config.jump_step)
 
             ia = BboxAnnotator(
                 ann_dict[img_list[img_idx][1]],
                 img_list[img_idx][1],
                 os.path.join(args.img_path, img_list[img_idx][0]),
                 is_start=img_idx == 0,
+                fps=config.drag_redraw_fps,
+                click_radius_ratio=config.click_radius_ratio,
+                history_size=config.history_size,
+                mark_checked_interval_seconds=config.mark_checked_interval_seconds,
             )
-            save_annotations(save_path, coco_data, ann_dict, update_date=True)
+            save_annotations_by_image(save_path, coco_data, ann_dict, update_date=True)
 
             cv2.setMouseCallback("Image", ia.mouse_callback)
         elif k == ord(".") or k == 81:
             ann_dict[img_list[img_idx][1]] = ia.get_annotation(json_compatible=True)
-            img_idx = increment_idx(img_idx, len(img_list), 10)
+            img_idx = increment_idx(img_idx, len(img_list), config.jump_step)
 
             ia = BboxAnnotator(
                 ann_dict[img_list[img_idx][1]],
                 img_list[img_idx][1],
                 os.path.join(args.img_path, img_list[img_idx][0]),
                 is_start=img_idx == 0,
+                fps=config.drag_redraw_fps,
+                click_radius_ratio=config.click_radius_ratio,
+                history_size=config.history_size,
+                mark_checked_interval_seconds=config.mark_checked_interval_seconds,
             )
-            save_annotations(save_path, coco_data, ann_dict, update_date=True)
+            save_annotations_by_image(save_path, coco_data, ann_dict, update_date=True)
 
             cv2.setMouseCallback("Image", ia.mouse_callback)
         elif k == ord("x"):
@@ -249,8 +271,12 @@ def main(args):
                 img_list[img_idx][1],
                 os.path.join(args.img_path, img_list[img_idx][0]),
                 is_start=img_idx == 0,
+                fps=config.drag_redraw_fps,
+                click_radius_ratio=config.click_radius_ratio,
+                history_size=config.history_size,
+                mark_checked_interval_seconds=config.mark_checked_interval_seconds,
             )
-            save_annotations(save_path, coco_data, ann_dict, update_date=True)
+            save_annotations_by_image(save_path, coco_data, ann_dict, update_date=True)
 
             cv2.setMouseCallback("Image", ia.mouse_callback)
         elif k == ord("q"):
@@ -266,17 +292,22 @@ def main(args):
                 img_list[img_idx][1],
                 os.path.join(args.img_path, img_list[img_idx][0]),
                 is_start=img_idx == 0,
+                fps=config.drag_redraw_fps,
+                click_radius_ratio=config.click_radius_ratio,
+                history_size=config.history_size,
+                mark_checked_interval_seconds=config.mark_checked_interval_seconds,
             )
-            save_annotations(save_path, coco_data, ann_dict, update_date=True)
+            save_annotations_by_image(save_path, coco_data, ann_dict, update_date=True)
 
             cv2.setMouseCallback("Image", ia.mouse_callback)
         else:
             ia.key_pressed(k)
 
     cv2.destroyAllWindows()
-    save_annotations(save_path, coco_data, ann_dict, update_date=True)
+    save_annotations_by_image(save_path, coco_data, ann_dict, update_date=True)
     if args.cloud_upload:
         upload_annotations(drive, coco_data, file_name, folder_id)
+
 
 if __name__ == "__main__":
     args = parse_args()

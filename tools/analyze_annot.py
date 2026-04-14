@@ -18,11 +18,7 @@ def main(annot_path):
     with open(annot_path, "r") as f:
         data = json.load(f)
 
-    print(
-        "Annotation file has {} images and {} annotations".format(
-            len(data["images"]), len(data["annotations"])
-        )
-    )
+    print("Annotation file has {} images and {} annotations".format(len(data["images"]), len(data["annotations"])))
 
     # Go through annotations and count bboxes and keypoints
     n_bboxes = 0
@@ -52,11 +48,7 @@ def main(annot_path):
         )
     )
     if n_kpts > 0:
-        print(
-            "{} of bboxes have all keypoints annotated. ({:.2f} %)".format(
-                n_full_kpts, n_full_kpts / n_kpts * 100
-            )
-        )
+        print("{} of bboxes have all keypoints annotated. ({:.2f} %)".format(n_full_kpts, n_full_kpts / n_kpts * 100))
     else:
         print("{:d} of bboxes have all keypoints annotated. ({:.2f} %)".format(0, 0.0))
 
@@ -79,9 +71,7 @@ def main(annot_path):
     )
     print(
         "{:.2f} % of bboxes have keypoints".format(
-            len(np.intersect1d(unique_imgs_w_bboxes, unique_imgs_w_kpts))
-            / len(unique_imgs_w_bboxes)
-            * 100
+            len(np.intersect1d(unique_imgs_w_bboxes, unique_imgs_w_kpts)) / len(unique_imgs_w_bboxes) * 100
         )
     )
 

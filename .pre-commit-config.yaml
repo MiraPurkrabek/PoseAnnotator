@@ -1,29 +1,35 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
--   repo: local
+  - repo: local
     hooks:
-    -   id: black
-        name: Black Python code formatting
-        entry: bash -c 'black . -l 100 --target-version py36; git add -u'
-        language: python
-    -   id: autoflake
+      - id: autoflake
         name: Remove unused variables and imports
-        entry: bash -c 'autoflake "$@"; git add -u'
-        language: python
+        entry: autoflake
+        language: system
+        pass_filenames: false
+        always_run: true
         args:
           [
-            ".",
-            "-r",
             "--in-place",
+            "--recursive",
             "--remove-all-unused-imports",
             "--remove-unused-variables",
             "--expand-star-imports",
             "--ignore-init-module-imports",
+            ".",
           ]
-        files: .py$
-    -   id: isort
-        name: Sort imports alphabetically
-        entry: bash -c 'isort "$@"; git add -u'
-        args: [".", "--profile", "black", "--filter-files", "--only-modified"]
-        language: python
+      - id: isort
+        name: Sort imports
+        entry: isort
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: [".", "--settings-path", "pyproject.toml"]
+      - id: black
+        name: Format Python code
+        entry: black
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: [".", "--config", "pyproject.toml"]

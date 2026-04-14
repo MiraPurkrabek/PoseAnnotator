@@ -25,9 +25,7 @@ def _fix_aspect_ratio(bbox_scale: np.ndarray, aspect_ratio: float) -> np.ndarray
         np.ndarray: The reshaped image scale in (2, )
     """
     w, h = np.hsplit(bbox_scale, [1])
-    bbox_scale = np.where(
-        w > h * aspect_ratio, np.hstack([w, w / aspect_ratio]), np.hstack([h * aspect_ratio, h])
-    )
+    bbox_scale = np.where(w > h * aspect_ratio, np.hstack([w, w / aspect_ratio]), np.hstack([h * aspect_ratio, h]))
     return bbox_scale
 
 

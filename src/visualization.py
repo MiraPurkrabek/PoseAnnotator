@@ -330,9 +330,7 @@ def show_annotation(img, annotation, pad=0.2, two_scales=True, inf_size=None):
     This function draws keypoints and bounding box on the image
     """
 
-    assert not (
-        two_scales and not inf_size is None
-    ), "Cannot use two_scales and inf_size at the same time"
+    assert not (two_scales and not inf_size is None), "Cannot use two_scales and inf_size at the same time"
 
     if isinstance(img, str):
         print("Loading image")

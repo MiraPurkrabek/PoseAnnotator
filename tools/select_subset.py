@@ -8,9 +8,7 @@ import shutil
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description="Copy a random 20% of files from a folder to a new folder."
-    )
+    parser = argparse.ArgumentParser(description="Copy a random 20% of files from a folder to a new folder.")
     parser.add_argument("source_folder", help="Path to the source folder")
     parser.add_argument("destination_folder", help="Path to the destination folder")
     return parser.parse_args()
