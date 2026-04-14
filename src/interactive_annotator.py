@@ -50,7 +50,7 @@ class InteractiveAnnotator(object):
                 "category_id": 1,
                 "id": 0,
             }
-            self.bbox_pad = 0.0
+            self.bbox_pad = 0.0 + 7 * 0.05
         else:
             self.annotation = deepcopy(annotation)
 
@@ -61,7 +61,7 @@ class InteractiveAnnotator(object):
                 self.annotation["area"] = self.annotation["bbox"][2] * self.annotation["bbox"][3]
 
             self.annotation["keypoints"] = np.array(self.annotation["keypoints"]).reshape(-1, 3)
-            self.bbox_pad = 0.0
+            self.bbox_pad = 0.0 + 7 * 0.05
 
         self.inf_size = inf_size
         self.preset_inf_size = inf_size
@@ -182,6 +182,10 @@ class InteractiveAnnotator(object):
         elif k == ord("a"):
             self.add_keypoint()
 
+        # Clear
+        elif k == ord("c"):
+            self.add_keypoint()
+
         # Zoom the image
         elif k == ord("o"):
             self.bbox_pad += 0.05
@@ -255,12 +259,14 @@ class InteractiveAnnotator(object):
 
         # Put the text on the image
         text = "{}-{:d}".format(self.annotation["image_id"], self.annotation["id"])
-
         text_color = (0, 0, 255) if self.is_start else (0, 0, 0)
+
+        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 1)[0]
+
         img = cv2.putText(
             img,
             text,
-            (img.shape[1] - 270, 30),
+            (img.shape[1] - text_size[0] - 5, text_size[1] + 5),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
             text_color,

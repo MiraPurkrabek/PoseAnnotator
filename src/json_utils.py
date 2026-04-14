@@ -45,6 +45,8 @@ def save_annotations(annotations_file, annotations, update_date=False, save=True
     if not save:
         return
     if update_date:
+        if "info" not in annotations:
+            annotations["info"] = {}
         annotations["info"]["date_created"] = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     with open(annotations_file, "w") as f:
         json.dump(annotations, f, indent=2)
