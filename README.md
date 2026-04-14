@@ -2,6 +2,8 @@
 
 PoseAnnotator is a local Python/OpenCV app for annotating person bounding boxes and 2D human poses in images. It is designed for COCO-style workflows and focuses on fast manual annotation with pose-aware visualization.
 
+![PoseAnnotator demo](docs/images/correct.gif)
+
 The repository serves two audiences:
 - annotators who need to run the app and produce consistent labels
 - developers who need to understand, extend, or maintain the codebase
@@ -51,6 +53,15 @@ pre-commit install
 ## Contributing
 
 Please read [docs/dev/contributing.md](docs/dev/contributing.md) before making code changes. The short version is: keep the current repo structure, use `pre-commit`, and update docs when behavior changes.
+
+## Maintainers And Contributors
+
+Maintainers:
+- [Miroslav Purkrabek](https://github.com/MiraPurkrabek) - main author and maintainer
+
+Contributors:
+- [Adela Subrtova](https://github.com/subrtadel)
+- [Fizza Rubab](https://github.com/Fizza-Rubab)
 
 ## Citation
 
